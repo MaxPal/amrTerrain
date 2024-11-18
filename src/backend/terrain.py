@@ -95,12 +95,14 @@ class Terrain(object):
             dy = dx
 
         # load raster
+        print("Raster:",self.tiffdata)
         if not os.path.isfile(self.tiffdata):
             raise FileNotFoundError('Need to download()')
         dem_raster = rasterio.open(self.tiffdata)
 
         # get source coordinate reference system, transform
         west, south, east, north = self.bounds
+        print("Bounds:",self.bounds)
         src_height, src_width = dem_raster.shape
         src_crs = dem_raster.crs
         src_transform = transform.from_bounds(*self.bounds, src_width, src_height)
@@ -277,6 +279,7 @@ class SRTM(Terrain):
             Decimal degree margin added to the bounds (default is 3")
             when clipping the downloaded elevation data.
         """
+        print("Bounds:",list(latlon_bounds))
         latlon_bounds = list(latlon_bounds)
         if margin is not None:
             latlon_bounds[0] -= margin
@@ -291,6 +294,7 @@ class SRTM(Terrain):
 
     def download(self,cleanup=True):
         """Download the SRTM data in GeoTIFF format"""
+        print("Downloading Data")
         dpath = os.path.dirname(self.tiffdata)
         if not os.path.isdir(dpath):
             print('Creating path',dpath)
@@ -306,6 +310,7 @@ class SRTM(Terrain):
             print('Note: Have elevation and gdal been installed properly?')
         if cleanup:
             elevation.clean()
+        print("Finished Downloading Data")
 
     def to_terrain(self,dx=None,dy=None,resampling=warp.Resampling.bilinear):
         """Load geospatial raster data and reproject onto specified grid
