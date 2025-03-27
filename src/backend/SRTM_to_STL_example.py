@@ -3,6 +3,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
                    flat_west,flat_east,flat_south,flat_north, use_tiff, \
                    write_stl,longmin,longmax,latmin,latmax):
     import os
+    from pathlib import Path
     import sys
     import numpy as np
     import matplotlib.pyplot as plt
@@ -69,25 +70,39 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
     x1 = np.arange(xmin, xmax, ds)
     y1 = np.arange(ymin, ymax, ds)
     xsurf,ysurf = np.meshgrid(x1, y1, indexing='ij')
-    print('The output bounding box is')
-    print('xmin: ',xsurf[0,0], '\nxmax: ',xsurf[-1,-1])
-    print('ymin: ',ysurf[0,0], '\nymax: ',ysurf[-1,-1])
+    # print('The output bounding box is')
+    # print('xmin: ',xsurf[0,0], '\nxmax: ',xsurf[-1,-1])
+    # print('ymin: ',ysurf[0,0], '\nymax: ',ysurf[-1,-1])
     # Terrain region to clip from the digital elevation model (DEM)
     #srtm_bounds = west, south, east, north = (refloc[1]-0.5, refloc[0]-0.4, refloc[1]+0.62, refloc[0]+0.42)
     srtm_bounds = west, south, east, north = (refloc[1]+longmin,refloc[0]+latmin,refloc[1]+longmax,refloc[0]+latmax)
     # this will be downloaded:
-    srtm_output=f'{outdir}/{case}.tif' # need absolute path for GDAL
+    #srtm_output=f'{outdir}/{case}.tif' # need absolute path for GDAL
+    # Get the absolute path needed for CGAL 
+    # Force to native path (Windows) using str().
+    srtm_output = str(Path(f'{outdir}/{case}.tif').resolve()) # need absolute path for GDAL
     if(tiffile==' '):
         pass
     else:
         srtm_output=tiffile
-        print("SRTM:",srtm_output)
+        #print("SRTM:",srtm_output)
     srtm = SRTM(srtm_bounds, fpath=srtm_output, product=product)
     if(tiffile==' '):
         srtm.download()
+        print(f'output tiff: {tiffile}', flush=True)
     x,y,z = srtm.to_terrain()
-    xref,yref,_,_ = utm.from_latlon(*refloc[:2], force_zone_number=srtm.zone_number)
+    xref,yref,_,_ = utm.from_latlon(*refloc[:2],force_zone_number=srtm.zone_number)
     vmin,vmax = 1500,2500
+    if(refloc[0]<0):
+        yref=yref-10000000
+    # print(np.amax(x),np.amin(x),np.amax(x)-np.amin(x))
+    # print(np.amax(y),np.amin(y),np.amax(y)-np.amin(y))
+    # #y=y+yref-0.5*(np.amax(y)+np.amin(y))
+    # print("Center:",0.5*(np.amax(y)+np.amin(y)))
+    # print("After mixing:",np.amax(y),np.amin(y),np.amax(y)-np.amin(y))
+    if(np.amin(z)<0):
+        z[z < 0] = 0
+    #exit(-1)
     if(write_stl):
         fig,ax = plt.subplots(figsize=(12,8))
         cm = ax.pcolormesh(x-xref, y-yref, z, cmap='terrain')#,vmin=vmin,vmax=vmax)
@@ -102,12 +117,11 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
         # bounding box for microscale region
         les = Rectangle((xmin,ymin), xmax-xmin, ymax-ymin, edgecolor='r', lw=3, facecolor='0.5', alpha=0.5)
         ax.add_patch(les)
-    #plt.show()
+
 
     # ### 3.1 Downscale to output grid
 
     # In[19]:
-
 
     interpfun = RectBivariateSpline(x[:,0]-xref, y[0,:]-yref, z)
 
@@ -117,8 +131,6 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
 
     # resampled SRTM data stored in 'zsrtm'
     zsrtm = interpfun(x1,y1,grid=True)
-
-
 
     # In[21]:
 
@@ -134,8 +146,8 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
         ax.axis('scaled')
 
         fig.savefig(f'{outdir}/elevation_srtm_{case}.png',dpi=150,bbox_inches='tight')
-
-
+    #plt.show()
+    #exit(-1)
     # ## 4. Get the low-resolution terrain from the mesoscale
     # This part is only relevant if the user chose to blen the high-resolution SRTM terrain data with WRF
 
@@ -210,7 +222,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
     # check distance from west boundary
     blend_w = np.ones(xsurf.shape)
     if fringe_w > 0:
-        blend_w = np.minimum(np.maximum((xsurf-xmin-fringe_flat_w)/fringe_w, 0), 1)
+        blend_w = np.minimum(np.maximum((xsurf-xmin-fringe_flat_w-fringe_w)/fringe_w, 0), 1)
 
 
     # In[28]:
@@ -219,7 +231,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
     # check distance from east boundary
     blend_e = np.ones(xsurf.shape)
     if fringe_e > 0:
-        blend_e = np.minimum(np.maximum((xmax-xsurf-fringe_flat_e)/fringe_e, 0), 1)
+        blend_e = np.minimum(np.maximum((xmax-xsurf-fringe_flat_e-fringe_w)/fringe_e, 0), 1)
 
 
     # In[29]:
@@ -228,7 +240,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
     # check distance from south boundary
     blend_s = np.ones(xsurf.shape)
     if fringe_s > 0:
-        blend_s = np.minimum(np.maximum((ysurf-ymin-fringe_flat_s)/fringe_s, 0), 1)
+        blend_s = np.minimum(np.maximum((ysurf-ymin-fringe_flat_s-fringe_s)/fringe_s, 0), 1)
 
 
     # In[30]:
@@ -237,7 +249,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
     # check distance from north boundary
     blend_n = np.ones(xsurf.shape)
     if fringe_n > 0:
-        blend_n = np.minimum(np.maximum((ymax-ysurf-fringe_flat_n)/fringe_n, 0), 1)
+        blend_n = np.minimum(np.maximum((ymax-ysurf-fringe_flat_n-fringe_n)/fringe_n, 0), 1)
 
 
     # In[31]:
@@ -260,6 +272,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
         ax.axis('scaled')
         #plt.show()
 
+    #exit(-1)
 
     # In[33]:
 
@@ -268,6 +281,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
     # SRTM data is unlikely to be around the z=0 mark, so get the average 
     z0 = np.amin(zsrtm) #0 #np.mean(zsrtm)
     zflat = np.full(zsrtm.shape,z0)
+
 
 
     # In[34]:
@@ -332,7 +346,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
 
 
     # ## 6. Write out terrain surface STL
-    print(outdir,xsurf.shape)
+    #print(outdir,xsurf.shape)
     import pyvista as pv 
     x1=xsurf.flatten(order='F')
     y1=ysurf.flatten(order='F')
@@ -374,7 +388,7 @@ def SRTM_Converter(outputDir,refLat,refLon,refHeight,left,right,bottom,top, \
     # surf.save(stlout, mode=mesh.stl.ASCII) # if ASCII STL is needed
     #print('Saved',stlout)
     #print(zblend[0,0])
-    return xref,yref,zTerrainRef,srtm
+    return xref,yref,zTerrainRef,srtm,srtm.zone_number
 
 
 
